@@ -32,6 +32,7 @@
 #include <chrono>
 #include <ctime>
 #include <iostream>
+#include <spdlog/fmt/fmt.h>
 
 #include "frBaseTypes.h"
 
@@ -60,5 +61,10 @@ class frTime
 
 std::ostream& operator<<(std::ostream& os, const frTime& t);
 }  // namespace fr
+
+#if defined(FMT_VERSION) && FMT_VERSION >= 90000
+#include <fmt/ostream.h>
+template <> struct fmt::formatter<fr::frTime> : fmt::ostream_formatter {};
+#endif // FMT_VERSION >= 90000
 
 #endif

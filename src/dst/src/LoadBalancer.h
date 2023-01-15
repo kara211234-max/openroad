@@ -33,6 +33,7 @@
 #include <mutex>
 #include <queue>
 #include <vector>
+#include <spdlog/fmt/fmt.h>
 
 #include "BalancerConnection.h"
 
@@ -104,3 +105,8 @@ class LoadBalancer
   friend class dst::BalancerConnection;
 };
 }  // namespace dst
+
+#if defined(FMT_VERSION) && FMT_VERSION >= 90000
+#include <fmt/ostream.h>
+template <> struct fmt::formatter<boost::asio::ip::address> : fmt::ostream_formatter {};
+#endif // FMT_VERSION >= 90000
