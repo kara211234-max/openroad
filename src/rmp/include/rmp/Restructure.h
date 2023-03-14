@@ -44,6 +44,9 @@
 namespace abc {
 }  // namespace abc
 
+namespace dst {
+class Distributed;
+}
 namespace utl {
 class Logger;
 }
@@ -72,7 +75,8 @@ enum class Mode
   DELAY_1,
   DELAY_2,
   DELAY_3,
-  DELAY_4
+  DELAY_4,
+  DELAY_5,
 };
 
 class Restructure
@@ -84,25 +88,43 @@ class Restructure
   void init(utl::Logger* logger,
             sta::dbSta* open_sta,
             odb::dbDatabase* db,
+            dst::Distributed* dist,
             rsz::Resizer* resizer);
   void reset();
   void run(char* liberty_file_name,
            float slack_threshold,
            unsigned max_depth,
            char* workdir_name,
-           char* abc_logfile);
+           char* abc_logfile,
+           const char* post_abc_script);
 
   void setMode(const char* mode_name);
   void setTieLoPort(sta::LibertyPort* loport);
+  void setTieLoPort(const std::string& cell, const std::string& port);
   void setTieHiPort(sta::LibertyPort* hiport);
+  void setTieHiPort(const std::string& cell, const std::string& port);
+  void runABCJob(const Mode mode,
+                 const ushort iterations,
+                 int& num_instances,
+                 int& level_gain,
+                 float& delay,
+                 std::string& blif_path);
+  void addLibFile(const std::string& lib_file);
+  void setDistributed(const std::string& host, unsigned short port);
+  void setWorkDirName(const std::string& dir) { work_dir_name_ = dir; }
+  void setPostABCScript(const std::string& path) { post_abc_script_ = path; }
 
  private:
   void deleteComponents();
   void getBlob(unsigned max_depth);
   void runABC();
   void postABC(float worst_slack);
-  bool writeAbcScript(std::string file_name);
-  void writeOptCommands(std::ofstream& script);
+  bool writeAbcScript(std::string file_name,
+                      Mode mode,
+                      const ushort iterations);
+  void writeOptCommands(std::ofstream& script,
+                        Mode mode,
+                        const ushort iterations);
   void initDB();
   void getEndPoints(sta::PinSet& ends, bool area_mode, unsigned max_depth);
   int countConsts(odb::dbBlock* top_block);
@@ -117,6 +139,7 @@ class Restructure
   std::string hicell_;
   std::string hiport_;
   std::string work_dir_name_;
+  std::string post_abc_script_;
 
   // db vars
   sta::dbSta* open_sta_;
@@ -131,6 +154,11 @@ class Restructure
 
   Mode opt_mode_;
   bool is_area_mode_;
+
+  // dst vars
+  dst::Distributed* dist_;
+  std::string dist_host_;
+  unsigned short dist_port_;
 };
 
 }  // namespace rmp

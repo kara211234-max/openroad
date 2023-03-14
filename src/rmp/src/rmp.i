@@ -74,11 +74,17 @@ void set_tiehi_port_cmd(LibertyPort* tieHiport)
 
 void
 restructure_cmd(char* liberty_file_name, char* target, float slack_threshold,
-                int depth_threshold, char* workdir_name, char* abc_logfile)
+                int depth_threshold, char* workdir_name, char* abc_logfile,
+                const char* post_abc_script)
 {
   getRestructure()->setMode(target);
   getRestructure()->run(liberty_file_name, slack_threshold, depth_threshold,
-                        workdir_name, abc_logfile);
+                        workdir_name, abc_logfile, post_abc_script);
+}
+
+void set_distributed(const char* host, unsigned short port)
+{
+  getRestructure()->setDistributed(host, port);  
 }
 
 // Locally Exposed for testing only..
