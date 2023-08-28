@@ -45,6 +45,86 @@ using namespace boost::polygon::operators;
 using Rectangle = boost::polygon::rectangle_data<int>;
 namespace gtl = boost::polygon;
 
+bool io::Parser::validWidth(odb::dbTechLayer* layer,
+                            int width,
+                            odb::dbTechLayerDir direction)
+{
+  const bool isWrongDir = (direction != layer->getDirection());
+
+  if (width < layer->getMinWidth()) {
+    return false;
+  }
+
+  auto widthTableRules = layer->getTechLayerWidthTableRules();
+  if (widthTableRules.size() == 0) {
+    return true;
+  }
+
+  for (auto* rule : widthTableRules) {
+    if (rule->isWrongDirection() != isWrongDir) {
+      continue;
+    }
+
+    int last_width = 0;
+    for (auto table_width : rule->getWidthTable()) {
+      last_width = table_width;
+      if (table_width == width) {
+        return true;
+      }
+    }
+
+    // The width can be equal to or greater than the last entry
+    return width >= last_width;
+  }
+
+  return true;
+}
+
+bool io::Parser::viaWidthsValid(frViaDef* viaDef)
+{
+  frVia via(viaDef);
+  const auto layer1Box = via.getLayer1BBox();
+  const auto layer2Box = via.getLayer2BBox();
+  const auto layer1Num = viaDef->getLayer1Num();
+  const auto layer2Num = viaDef->getLayer2Num();
+  const auto dbLayer1 = tech_->getLayer(layer1Num)->getDbLayer();
+  const auto dbLayer2 = tech_->getLayer(layer2Num)->getDbLayer();
+
+  // We ignore vias with default width pads because they wont cause width table
+  // violations when connected to preferred direction wires. There might be
+  // issues with wrong direction wires, but we ignore that for now.
+  const auto horizontal = odb::dbTechLayerDir::HORIZONTAL;
+  const auto vertical = odb::dbTechLayerDir::VERTICAL;
+
+  const bool isLayer1Fat = (dbLayer1->getDirection() == horizontal)
+                               ? (layer1Box.dy() > dbLayer1->getWidth())
+                               : (layer1Box.dx() > dbLayer1->getWidth());
+  const bool isLayer2Fat = (dbLayer2->getDirection() == horizontal)
+                               ? (layer2Box.dy() > dbLayer2->getWidth())
+                               : (layer2Box.dx() > dbLayer2->getWidth());
+
+  if (isLayer1Fat
+      && (!validWidth(dbLayer1, layer1Box.dy(), horizontal)
+          || !validWidth(dbLayer1, layer1Box.dx(), vertical))) {
+    return false;
+  }
+  if (isLayer2Fat
+      && (!validWidth(dbLayer2, layer2Box.dy(), horizontal)
+          || !validWidth(dbLayer2, layer2Box.dx(), vertical))) {
+    return false;
+  }
+
+  if (layer1Box.minDXDY() > dbLayer1->getMaxWidth()) {
+    return false;
+  }
+
+  if (layer2Box.minDXDY() > dbLayer2->getMaxWidth()) {
+    return false;
+  }
+
+  return true;
+}
+
 void io::Parser::initDefaultVias()
 {
   for (auto& uViaDef : tech_->getVias()) {
@@ -71,6 +151,9 @@ void io::Parser::initDefaultVias()
     }
     std::map<int, std::map<viaRawPriorityTuple, frViaDef*>> cuts2ViaDefs;
     for (auto& viaDef : layer->getViaDefs()) {
+      if (!viaWidthsValid(viaDef)) {
+        continue;
+      }
       int cutNum = int(viaDef->getCutFigs().size());
       viaRawPriorityTuple priority;
       getViaRawPriority(viaDef, priority);
@@ -411,88 +494,6 @@ void io::Parser::getViaRawPriority(frViaDef* viaDef,
              isNotLowerAlign);
 }
 
-// 13M_3Mx_2Cx_4Kx_2Hx_2Gx_LB
-void io::Parser::initDefaultVias_GF14(const string& node)
-{
-  for (int layerNum = 1; layerNum < (int) tech_->getLayers().size();
-       layerNum += 2) {
-    for (auto& uViaDef : tech_->getVias()) {
-      auto viaDef = uViaDef.get();
-      if (viaDef->getCutLayerNum() == layerNum
-          && node == "GF14_13M_3Mx_2Cx_4Kx_2Hx_2Gx_LB") {
-        switch (layerNum) {
-          case 3:  // VIA1
-            if (viaDef->getName() == "V1_0_15_0_25_VH_Vx") {
-              tech_->getLayer(layerNum)->setDefaultViaDef(viaDef);
-            }
-            break;
-          case 5:  // VIA2
-            if (viaDef->getName() == "V2_0_25_0_25_HV_Vx") {
-              tech_->getLayer(layerNum)->setDefaultViaDef(viaDef);
-            }
-            break;
-          case 7:  // VIA3
-            if (viaDef->getName() == "J3_0_25_4_40_VH_Jy") {
-              tech_->getLayer(layerNum)->setDefaultViaDef(viaDef);
-            }
-            break;
-          case 9:  // VIA4
-            if (viaDef->getName() == "A4_0_50_0_50_HV_Ax") {
-              tech_->getLayer(layerNum)->setDefaultViaDef(viaDef);
-            }
-            break;
-          case 11:  // VIA5
-            if (viaDef->getName() == "CK_23_28_0_26_VH_CK") {
-              tech_->getLayer(layerNum)->setDefaultViaDef(viaDef);
-            }
-            break;
-          case 13:  // VIA6
-            if (viaDef->getName() == "U1_0_26_0_26_HV_Ux") {
-              tech_->getLayer(layerNum)->setDefaultViaDef(viaDef);
-            }
-            break;
-          case 15:  // VIA7
-            if (viaDef->getName() == "U2_0_26_0_26_VH_Ux") {
-              tech_->getLayer(layerNum)->setDefaultViaDef(viaDef);
-            }
-            break;
-          case 17:  // VIA8
-            if (viaDef->getName() == "U3_0_26_0_26_HV_Ux") {
-              tech_->getLayer(layerNum)->setDefaultViaDef(viaDef);
-            }
-            break;
-          case 19:  // VIA9
-            if (viaDef->getName() == "KH_18_45_0_45_VH_KH") {
-              tech_->getLayer(layerNum)->setDefaultViaDef(viaDef);
-            }
-            break;
-          case 21:  // VIA10
-            if (viaDef->getName() == "N1_0_45_0_45_HV_Nx") {
-              tech_->getLayer(layerNum)->setDefaultViaDef(viaDef);
-            }
-            break;
-          case 23:  // VIA11
-            if (viaDef->getName() == "HG_18_72_18_72_VH_HG") {
-              tech_->getLayer(layerNum)->setDefaultViaDef(viaDef);
-            }
-            break;
-          case 25:  // VIA12
-            if (viaDef->getName() == "T1_18_72_18_72_HV_Tx") {
-              tech_->getLayer(layerNum)->setDefaultViaDef(viaDef);
-            }
-            break;
-          case 27:  // VIA13
-            if (viaDef->getName() == "VV_450_450_450_450_XX_VV") {
-              tech_->getLayer(layerNum)->setDefaultViaDef(viaDef);
-            }
-            break;
-          default:;
-        }
-      }
-    }
-  }
-}
-
 void io::Parser::convertLef58MinCutConstraints()
 {
   auto bottomLayerNum = tech_->getBottomLayerNum();
@@ -732,9 +733,6 @@ void io::Parser::postProcess()
 {
   checkPins();
   initDefaultVias();
-  if (DBPROCESSNODE == "GF14_13M_3Mx_2Cx_4Kx_2Hx_2Gx_LB") {
-    initDefaultVias_GF14(DBPROCESSNODE);
-  }
   initCutLayerWidth();
   initConstraintLayerIdx();
   tech_->printDefaultVias(logger_);
