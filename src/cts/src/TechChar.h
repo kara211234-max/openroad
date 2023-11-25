@@ -251,6 +251,18 @@ class TechChar
   // Characterization attributes
 
   void initCharacterization();
+  void finalizeRootSinkBuffers();
+  void trimSortBufferList(std::vector<std::string>& bufferVector);
+  float getMaxCapLimit(const std::string& buf);
+  void collectSlewsLoadsFromTableAxis(sta::LibertyCell* libCell,
+                                      sta::LibertyPort* input,
+                                      sta::LibertyPort* output,
+                                      std::vector<float>& axisSlews,
+                                      std::vector<float>& axisLoads);
+  void sortAndUniquify(std::vector<float>& values, std::string name);
+  void reduceOrExpand(std::vector<float>& values, unsigned limit);
+  std::vector<float>::iterator smallestDiffIter(std::vector<float>& values);
+  std::vector<float>::iterator largestDiffIter(std::vector<float>& values);
   std::vector<SolutionData> createPatterns(unsigned setupWirelength);
   void createStaInstance();
   void setParasitics(const std::vector<SolutionData>& topologiesVector,
@@ -267,6 +279,7 @@ class TechChar
                                 unsigned* min,
                                 unsigned* max);
   void initClockLayerResCap(float dbUnitsPerMicron);
+  unsigned getBufferingCombo(size_t numBuffers, size_t numNodes);
 
   static constexpr unsigned NUM_BITS_PER_FIELD = 10;
   static constexpr unsigned MAX_NORMALIZED_VAL = (1 << NUM_BITS_PER_FIELD) - 1;
@@ -303,7 +316,7 @@ class TechChar
   double capPerDBU_;  // farads/dbu
   float charSlewStepSize_ = 0.0;
   float charCapStepSize_ = 0.0;
-  std::set<std::string> masterNames_;
+  std::vector<std::string> masterNames_;
   std::vector<float> wirelengthsToTest_;
   std::vector<float> loadsToTest_;
   std::vector<float> slewsToTest_;
