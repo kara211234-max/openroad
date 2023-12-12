@@ -34,6 +34,7 @@
 #include "db/obj/frVia.h"
 #include "db/taObj/taPin.h"
 #include "frDesign.h"
+#include "frRTree.h"
 
 namespace fr {
 class FlexTAGraphics;
@@ -64,14 +65,11 @@ class FlexTA
   int initTA_helper(int iter, int size, int offset, bool isH, int& numPanels);
 };
 
-class FlexTAWorker;
 class FlexTAWorkerRegionQuery
 {
  public:
-  FlexTAWorkerRegionQuery(FlexTAWorker* in);
+  FlexTAWorkerRegionQuery(){};
   ~FlexTAWorkerRegionQuery();
-  frDesign* getDesign() const;
-  FlexTAWorker* getTAWorker() const;
 
   void add(taPinFig* fig);
   void remove(taPinFig* fig);
@@ -93,11 +91,12 @@ class FlexTAWorkerRegionQuery
       std::vector<rq_box_value_t<std::pair<frBlockObject*, frConstraint*>>>&
           result) const;
 
-  void init();
+  void init(int numLayers);
 
  private:
-  struct Impl;
-  std::unique_ptr<Impl> impl_;
+  std::vector<RTree<taPinFig*>> shapes_;  // resource map
+  // fixed objs, owner:: nullptr or net, con = short
+  std::vector<RTree<std::pair<frBlockObject*, frConstraint*>>> costs_;
 };
 
 class FlexTAWorker
@@ -110,7 +109,6 @@ class FlexTAWorker
         save_updates_(save_updates),
         dir_(dbTechLayerDir::NONE),
         taIter_(0),
-        rq_(this),
         numAssigned_(0),
         totCost_(0),
         maxRetry_(1),
@@ -179,6 +177,7 @@ class FlexTAWorker
   int getNumAssigned() const { return numAssigned_; }
   // others
   int main_mt();
+  void end();
 
  private:
   frDesign* design_;
@@ -309,11 +308,7 @@ class FlexTAWorker
                                  std::set<taPin*, frBlockObjectComp>* pinS);
   void assignIroute_updateOthers(std::set<taPin*, frBlockObjectComp>& pinS);
 
-  // end
-  void end();
   void saveToGuides();
-
-  friend class FlexTA;
 };
 
 }  // namespace fr

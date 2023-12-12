@@ -31,31 +31,7 @@
 
 namespace fr {
 
-struct FlexTAWorkerRegionQuery::Impl
-{
-  FlexTAWorker* taWorker;
-  std::vector<RTree<taPinFig*>> shapes_;  // resource map
-  // fixed objs, owner:: nullptr or net, con = short
-  std::vector<RTree<std::pair<frBlockObject*, frConstraint*>>> costs_;
-};
-
-FlexTAWorkerRegionQuery::FlexTAWorkerRegionQuery(FlexTAWorker* in)
-    : impl_(make_unique<Impl>())
-{
-  impl_->taWorker = in;
-}
-
 FlexTAWorkerRegionQuery::~FlexTAWorkerRegionQuery() = default;
-
-FlexTAWorker* FlexTAWorkerRegionQuery::getTAWorker() const
-{
-  return impl_->taWorker;
-}
-
-frDesign* FlexTAWorkerRegionQuery::getDesign() const
-{
-  return impl_->taWorker->getDesign();
-}
 
 void FlexTAWorkerRegionQuery::add(taPinFig* fig)
 {
@@ -64,13 +40,12 @@ void FlexTAWorkerRegionQuery::add(taPinFig* fig)
     auto obj = static_cast<taPathSeg*>(fig);
     auto [bp, ep] = obj->getPoints();
     box = Rect(bp, ep);
-    impl_->shapes_.at(obj->getLayerNum()).insert(make_pair(box, obj));
+    shapes_.at(obj->getLayerNum()).insert(make_pair(box, obj));
   } else if (fig->typeId() == tacVia) {
     auto obj = static_cast<taVia*>(fig);
     auto bp = obj->getOrigin();
     box = Rect(bp, bp);
-    impl_->shapes_.at(obj->getViaDef()->getCutLayerNum())
-        .insert(make_pair(box, obj));
+    shapes_.at(obj->getViaDef()->getCutLayerNum()).insert(make_pair(box, obj));
   } else {
     cout << "Error: unsupported region query add" << endl;
   }
@@ -83,13 +58,12 @@ void FlexTAWorkerRegionQuery::remove(taPinFig* fig)
     auto obj = static_cast<taPathSeg*>(fig);
     auto [bp, ep] = obj->getPoints();
     box = Rect(bp, ep);
-    impl_->shapes_.at(obj->getLayerNum()).remove(make_pair(box, obj));
+    shapes_.at(obj->getLayerNum()).remove(make_pair(box, obj));
   } else if (fig->typeId() == tacVia) {
     auto obj = static_cast<taVia*>(fig);
     auto bp = obj->getOrigin();
     box = Rect(bp, bp);
-    impl_->shapes_.at(obj->getViaDef()->getCutLayerNum())
-        .remove(make_pair(box, obj));
+    shapes_.at(obj->getViaDef()->getCutLayerNum()).remove(make_pair(box, obj));
   } else {
     cout << "Error: unsupported region query add" << endl;
   }
@@ -101,20 +75,19 @@ void FlexTAWorkerRegionQuery::query(
     set<taPin*, frBlockObjectComp>& result) const
 {
   vector<rq_box_value_t<taPinFig*>> temp;
-  auto& tree = impl_->shapes_.at(layerNum);
+  auto& tree = shapes_.at(layerNum);
   transform(tree.qbegin(bgi::intersects(box)),
             tree.qend(),
             inserter(result, result.end()),
             [](const auto& box_fig) { return box_fig.second->getPin(); });
 }
 
-void FlexTAWorkerRegionQuery::init()
+void FlexTAWorkerRegionQuery::init(int numLayers)
 {
-  int numLayers = getDesign()->getTech()->getLayers().size();
-  impl_->shapes_.clear();
-  impl_->shapes_.resize(numLayers);
-  impl_->costs_.clear();
-  impl_->costs_.resize(numLayers);
+  shapes_.clear();
+  shapes_.resize(numLayers);
+  costs_.clear();
+  costs_.resize(numLayers);
 }
 
 void FlexTAWorkerRegionQuery::addCost(const Rect& box,
@@ -122,7 +95,7 @@ void FlexTAWorkerRegionQuery::addCost(const Rect& box,
                                       frBlockObject* obj,
                                       frConstraint* con)
 {
-  impl_->costs_.at(layerNum).insert(make_pair(box, make_pair(obj, con)));
+  costs_.at(layerNum).insert(make_pair(box, make_pair(obj, con)));
 }
 
 void FlexTAWorkerRegionQuery::removeCost(const Rect& box,
@@ -130,7 +103,7 @@ void FlexTAWorkerRegionQuery::removeCost(const Rect& box,
                                          frBlockObject* obj,
                                          frConstraint* con)
 {
-  impl_->costs_.at(layerNum).remove(make_pair(box, make_pair(obj, con)));
+  costs_.at(layerNum).remove(make_pair(box, make_pair(obj, con)));
 }
 
 void FlexTAWorkerRegionQuery::queryCost(
@@ -138,7 +111,7 @@ void FlexTAWorkerRegionQuery::queryCost(
     const frLayerNum layerNum,
     vector<rq_box_value_t<pair<frBlockObject*, frConstraint*>>>& result) const
 {
-  impl_->costs_.at(layerNum).query(bgi::intersects(box), back_inserter(result));
+  costs_.at(layerNum).query(bgi::intersects(box), back_inserter(result));
 }
 
 }  // namespace fr
