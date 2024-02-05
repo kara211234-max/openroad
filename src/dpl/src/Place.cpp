@@ -42,6 +42,7 @@
 #include <cstdlib>
 #include <limits>
 #include <memory>
+#include <unordered_set>
 
 #include "DplObserver.h"
 #include "dpl/Opendp.h"
@@ -739,11 +740,6 @@ PixelPt Opendp::diamondSearch(const Cell* cell,
   // Diamond search limits.
   int x_min = x - max_displacement_x_;
   int x_max = x + max_displacement_x_;
-  // TODO: IMO, this is still not correct.
-  //  I am scaling based on the smallest row_height to keep code consistent with
-  //  the original code.
-  //  max_displacement_y_ is in microns, and this doesn't translate directly to
-  //  x and y on the grid.
   int scaled_max_displacement_y_
       = map_ycoordinates(max_displacement_y_,
                          smallest_non_hybrid_grid_key_,
@@ -753,6 +749,7 @@ PixelPt Opendp::diamondSearch(const Cell* cell,
   int y_max = y + scaled_max_displacement_y_;
 
   auto [row_height, grid_info] = getRowInfo(cell);
+  auto gmk = getGridMapKey(cell);
   int site_width = getSiteWidth(cell);
 
   // Restrict search to group boundary.
@@ -795,58 +792,98 @@ PixelPt Opendp::diamondSearch(const Cell* cell,
     return avail_pt;
   }
 
-  for (int i = 1; i < std::max(scaled_max_displacement_y_, max_displacement_x_);
-       i++) {
-    PixelPt best_pt;
-    int best_dist = 0;
-    // left side
-    for (int j = 1; j < i * 2; j++) {
-      int x_offset = -((j + 1) / 2);
-      int y_offset = (i * 2 - j) / 2;
-      if (abs(x_offset) < max_displacement_x_
-          && abs(y_offset) < scaled_max_displacement_y_) {
-        if (j % 2 == 1) {
-          y_offset = -y_offset;
-        }
-        diamondSearchSide(cell,
-                          x,
-                          y,
-                          x_min,
-                          y_min,
-                          x_max,
-                          y_max,
-                          x_offset,
-                          y_offset,
-                          best_pt,
-                          best_dist);
-      }
+  struct PQ_entry
+  {
+    int manhattan_distance;
+    odb::Point p;
+    bool operator>(const PQ_entry& other) const
+    {
+      return std::tie(manhattan_distance, p)
+             > std::tie(other.manhattan_distance, other.p);
+    }
+    bool operator==(const PQ_entry& other) const
+    {
+      return manhattan_distance == other.manhattan_distance;
+    }
+  };
+  std::priority_queue<PQ_entry, std::vector<PQ_entry>, std::greater<PQ_entry>>
+      positionsHeap;
+
+  std::unordered_set<odb::Point, odb::Point::Hash> visitedPositions;
+  const odb::Point center = {x, y};
+  positionsHeap.push({0, center});
+  PixelPt best_pt;
+  int best_dist = std::numeric_limits<int>::max();
+  int best_for = 0;
+  while (!positionsHeap.empty()) {
+    const auto top = positionsHeap.top();
+    positionsHeap.pop();
+    const int new_x = top.p.getX();
+    const int new_y = top.p.getY();
+    const int x_offset = new_x - x;
+    const int y_offset = new_y - y;
+    // Check if this position has been visited
+    if (visitedPositions.count({new_x, new_y}) > 0) {
+      continue;
     }
 
-    // right side
-    for (int j = 1; j < (i + 1) * 2; j++) {
-      int x_offset = (j - 1) / 2;
-      int y_offset = ((i + 1) * 2 - j) / 2;
-      if (abs(x_offset) < max_displacement_x_
-          && abs(y_offset) < scaled_max_displacement_y_) {
-        if (j % 2 == 1) {
-          y_offset = -y_offset;
-        }
-        diamondSearchSide(cell,
-                          x,
-                          y,
-                          x_min,
-                          y_min,
-                          x_max,
-                          y_max,
-                          x_offset,
-                          y_offset,
-                          best_pt,
-                          best_dist);
+    PixelPt cur_pt;
+    int cur_dist = 0;
+    if (abs(x_offset) < max_displacement_x_
+        && abs(y_offset) < scaled_max_displacement_y_) {
+      diamondSearchSide(cell,
+                        x,
+                        y,
+                        x_min,
+                        y_min,
+                        x_max,
+                        y_max,
+                        x_offset,
+                        y_offset,
+                        cur_pt,
+                        cur_dist);
+
+      if (cur_pt.pixel && cur_dist < best_dist) {
+        best_pt = cur_pt;
+        best_dist = cur_dist;
+        best_for = 0;
+      } else if (best_dist < cur_dist) {
+        ++best_for;
       }
+      if (best_for >= 7) {
+        return best_pt;
+      }
+      visitedPositions.insert({new_x, new_y});
+      auto manhattanDistance
+          = [&](const odb::Point& p1, const odb::Point& p2) -> int {
+        int x_dist = std::abs(p1.getX() - p2.getX()) * site_width;
+        int y_dist = std::abs(coordinateToHeight(p2.getY(), gmk)
+                              - coordinateToHeight(p1.getY(), gmk));
+
+        return x_dist + y_dist;
+      };
+      const odb::Point below = {new_x - 1, new_y};
+      const odb::Point above = {new_x + 1, new_y};
+      const odb::Point left = {new_x, new_y - 1};
+      const odb::Point right = {new_x, new_y + 1};
+      auto d_below = manhattanDistance(below, center);
+      auto d_above = manhattanDistance(above, center);
+      auto d_left = manhattanDistance(left, center);
+      auto d_right = manhattanDistance(right, center);
+      auto check_and_push
+          = [&](const odb::Point& p, const int distance_to_point) {
+              if (visitedPositions.count(p) == 0) {
+                positionsHeap.push({distance_to_point, p});
+              }
+            };
+      check_and_push(below, d_below);
+      check_and_push(above, d_above);
+      check_and_push(left, d_left);
+      check_and_push(right, d_right);
     }
-    if (best_pt.pixel) {
-      return best_pt;
-    }
+  }
+  if (best_pt.pixel) {
+    return best_pt;
   }
   return PixelPt();
 }
@@ -864,7 +901,7 @@ void Opendp::diamondSearchSide(const Cell* cell,
                                PixelPt& best_pt,
                                int& best_dist) const
 {
-  int bin_x = min(x_max, max(x_min, x + x_offset * bin_search_width_));
+  int bin_x = min(x_max, max(x_min, x + x_offset));
   int bin_y = min(y_max, max(y_min, y + y_offset));
   PixelPt avail_pt = binSearch(x, cell, bin_x, bin_y);
   if (avail_pt.pixel) {
