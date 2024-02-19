@@ -2650,7 +2650,15 @@ void FlexDRWorker::route_queue_update_from_marker(
     }
   }
   for (auto& victimOwner : uniqueVictimOwners) {
-    checks.push_back({victimOwner, -1, false});
+    if (victimOwner->typeId() == frcNet) {
+      if (getDRNets(((frNet*) (victimOwner)))) {
+        for (auto dNet : *(getDRNets(((frNet*) (victimOwner))))) {
+          checks.push_back({dNet, -1, false});
+        }
+      }
+    } else {
+      checks.push_back({victimOwner, -1, false});
+    }
   }
 }
 
@@ -3124,8 +3132,7 @@ void FlexDRWorker::initMazeCost_connFig()
     }
     gcWorker_->updateDRNet(net.get());
     gcWorker_->updateGCWorker();
-    modEolCosts_poly(gcWorker_->getNet(net->getFrNet()),
-                     ModCostType::addRouteShape);
+    modEolCosts_poly(gcWorker_->getNet(net.get()), ModCostType::addRouteShape);
   }
 }
 

@@ -30,6 +30,7 @@
 
 #include <memory>
 
+#include "db/drObj/drNet.h"
 #include "db/gcObj/gcBlockObject.h"
 #include "db/gcObj/gcPin.h"
 #include "db/obj/frBlockage.h"
@@ -37,6 +38,7 @@
 #include "db/obj/frNet.h"
 
 namespace fr {
+class drNet;
 class frNet;
 class gcNet : public gcBlockObject
 {
@@ -185,11 +187,20 @@ class gcNet : public gcBlockObject
   }
   // others
   frBlockObjectEnum typeId() const override { return gccNet; }
-
   frNet* getFrNet() const
   {
     if (owner_->typeId() == frcNet) {
       return static_cast<frNet*>(owner_);
+    }
+    if (owner_->typeId() == drcNet) {
+      return (static_cast<drNet*>(owner_))->getFrNet();
+    }
+    return nullptr;
+  }
+  drNet* getDrNet() const
+  {
+    if (owner_->typeId() == drcNet) {
+      return static_cast<drNet*>(owner_);
     }
     return nullptr;
   }

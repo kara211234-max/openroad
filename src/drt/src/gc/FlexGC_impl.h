@@ -172,8 +172,9 @@ class FlexGCWorker::Impl
 
   void modifyMarkers();
   // init
+  drNet* getDRNet(frBlockObject* obj);
   gcNet* getNet(frBlockObject* obj);
-  gcNet* getNet(frNet* net);
+  gcNet* getNet(drNet* net);
   void initObj(const Rect& box,
                frLayerNum layerNum,
                frBlockObject* obj,
@@ -245,6 +246,8 @@ class FlexGCWorker::Impl
       gcRect* rect1,
       gcRect* rect2,
       const gtl::rectangle_data<frCoord>& markerRect);
+
+  bool checkSameFrNet(gcNet* net1, gcNet* net2);
 
   bool checkMetalSpacing_short_skipSameNet(
       gcRect* rect1,

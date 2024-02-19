@@ -1721,8 +1721,7 @@ void FlexDRWorker::route_queue_main(std::queue<RouteQueueEntry>& rerouteQueue)
         subPathCost(uConnFig.get());
         workerRegionQuery.remove(uConnFig.get());  // worker region query
       }
-      modEolCosts_poly(gcWorker_->getNet(net->getFrNet()),
-                       ModCostType::subRouteShape);
+      modEolCosts_poly(gcWorker_->getNet(net), ModCostType::subRouteShape);
       // route_queue need to unreserve via access if all nets are ripped up
       // (i.e., not routed) see route_queue_init_queue this
       // is unreserve via via is reserved only when drWorker starts from nothing
@@ -1767,7 +1766,7 @@ void FlexDRWorker::route_queue_main(std::queue<RouteQueueEntry>& rerouteQueue)
       net->addNumReroutes();
       didRoute = true;
       // gc
-      if (gcWorker_->setTargetNet(net->getFrNet())) {
+      if (gcWorker_->setTargetNet(net)) {
         gcWorker_->updateDRNet(net);
         gcWorker_->setEnableSurgicalFix(true);
         gcWorker_->main();

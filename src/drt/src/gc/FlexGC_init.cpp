@@ -35,6 +35,54 @@
 
 using namespace fr;
 
+drNet* FlexGCWorker::Impl::getDRNet(frBlockObject* obj)
+{
+  switch (obj->typeId()) {
+    case frcBTerm: {
+      auto bterm = static_cast<frBTerm*>(obj);
+      frNet* fNet = bterm->getNet();
+      if (fNet) {
+        if (getDRWorker()) {
+          if (getDRWorker()->getDRNets(fNet)) {
+            for (auto dNet : *(getDRWorker()->getDRNets(fNet))) {
+              for (auto& pin : dNet->getPins()) {
+                if (pin->getFrTerm() == bterm) {
+                  return dNet;
+                }
+              }
+            }
+            return (*(getDRWorker()->getDRNets(fNet)))[0];
+          }
+        }
+      }
+      break;
+    }
+    case frcInstTerm: {
+      auto instTerm = static_cast<frInstTerm*>(obj);
+      frNet* fNet = instTerm->getNet();
+      if (fNet) {
+        if (getDRWorker()) {
+          if (getDRWorker()->getDRNets(fNet)) {
+            for (auto dNet : *(getDRWorker()->getDRNets(fNet))) {
+              for (auto& pin : dNet->getPins()) {
+                if (pin->getFrTerm() == instTerm) {
+                  return dNet;
+                }
+              }
+            }
+            return (*(getDRWorker()->getDRNets(fNet)))[0];
+          }
+        }
+      }
+      break;
+    }
+    default: {
+      logger_->error(DRT, 40, "obj has no drNet.");
+    }
+  }
+  return nullptr;
+}
+
 gcNet* FlexGCWorker::Impl::getNet(frBlockObject* obj)
 {
   bool isFloatingVDD = false;
@@ -44,7 +92,10 @@ gcNet* FlexGCWorker::Impl::getNet(frBlockObject* obj)
     case frcBTerm: {
       auto bterm = static_cast<frBTerm*>(obj);
       if (bterm->hasNet()) {
-        owner = bterm->getNet();
+        owner = getDRNet(bterm);
+        if (!owner) {
+          owner = bterm->getNet();
+        }
       } else {
         dbSigType sigType = bterm->getType();
         isFloatingVDD = (sigType == dbSigType::POWER);
@@ -56,7 +107,10 @@ gcNet* FlexGCWorker::Impl::getNet(frBlockObject* obj)
     case frcInstTerm: {
       auto instTerm = static_cast<frInstTerm*>(obj);
       if (instTerm->hasNet()) {
-        owner = instTerm->getNet();
+        owner = getDRNet(instTerm);
+        if (!owner) {
+          owner = instTerm->getNet();
+        }
       } else {
         dbSigType sigType = instTerm->getTerm()->getType();
         isFloatingVDD = (sigType == dbSigType::POWER);
@@ -94,7 +148,7 @@ gcNet* FlexGCWorker::Impl::getNet(frBlockObject* obj)
     case drcPatchWire: {
       auto fig = static_cast<drConnFig*>(obj);
       if (fig->hasNet()) {
-        owner = fig->getNet()->getFrNet();
+        owner = fig->getNet();
       } else {
         logger_->error(
             DRT, 38, "init_design_helper shape does not have dr net.");
@@ -120,7 +174,7 @@ gcNet* FlexGCWorker::Impl::getNet(frBlockObject* obj)
     return currNet;
   }
 }
-gcNet* FlexGCWorker::Impl::getNet(frNet* net)
+gcNet* FlexGCWorker::Impl::getNet(drNet* net)
 {
   auto it = owner2nets_.find(net);
   if (it == owner2nets_.end())
@@ -391,9 +445,9 @@ void FlexGCWorker::Impl::initDRWorker()
   }
   for (auto& uDRNet : getDRWorker()->getNets()) {
     // always first generate gcnet in case owner does not have any object
-    auto it = owner2nets_.find(uDRNet->getFrNet());
+    auto it = owner2nets_.find(uDRNet.get());
     if (it == owner2nets_.end()) {
-      addNet(uDRNet->getFrNet());
+      addNet(uDRNet.get());
     }
     gcNet* gNet = nullptr;
     // auto net = uDRNet->getFrNet();
@@ -949,55 +1003,47 @@ void FlexGCWorker::Impl::updateGCWorker()
   }
 
   // get all frNets, must be sorted by id
-  std::set<frNet*, frBlockObjectComp> fnets;
+  std::set<drNet*, frBlockObjectComp> dnets;
   for (auto dnet : modifiedDRNets_) {
-    fnets.insert(dnet->getFrNet());
+    dnets.insert(dnet);
   }
   modifiedDRNets_.clear();
 
   // get GC patched net as well
   for (auto& patch : pwires_) {
-    if (patch->hasNet() && patch->getNet()->getFrNet()) {
-      fnets.insert(patch->getNet()->getFrNet());
+    if (patch->hasNet() && patch->getNet()) {
+      dnets.insert(patch->getNet());
     }
   }
 
   // start init from dr objs
-  for (auto fnet : fnets) {
-    auto net = owner2nets_[fnet];
+  for (auto dnet : dnets) {
+    auto net = owner2nets_[dnet];
     getWorkerRegionQuery().removeFromRegionQuery(
         net);      // delete all region queries
     net->clear();  // delete all pins and routeXXX
-    // re-init gcnet from drobjs
-    auto vecptr = getDRWorker()->getDRNets(fnet);
-    if (vecptr) {
-      for (auto dnet : *vecptr) {
-        // initialize according to drnets
-        for (auto& uConnFig : dnet->getExtConnFigs()) {
-          initDRObj(uConnFig.get(), net);
-        }
-        for (auto& uConnFig : dnet->getRouteConnFigs()) {
-          initDRObj(uConnFig.get(), net);
-        }
-        addNonTaperedPatches(net, dnet);
-      }
-    } else {
-      logger_->error(DRT, 53, "updateGCWorker cannot find frNet in DRWorker.");
+    // initialize according to drnets
+    for (auto& uConnFig : dnet->getExtConnFigs()) {
+      initDRObj(uConnFig.get(), net);
     }
+    for (auto& uConnFig : dnet->getRouteConnFigs()) {
+      initDRObj(uConnFig.get(), net);
+    }
+    addNonTaperedPatches(net, dnet);
   }
 
   // start init from GC patches
   for (auto& patch : pwires_) {
-    if (patch->hasNet() && patch->getNet()->getFrNet()) {
-      auto fnet = patch->getNet()->getFrNet();
-      auto net = owner2nets_[fnet];
+    if (patch->hasNet() && patch->getNet()) {
+      auto dnet = patch->getNet();
+      auto net = owner2nets_[dnet];
       initDRObj(patch.get(), net);
     }
   }
 
   // init
-  for (auto fnet : fnets) {
-    auto net = owner2nets_[fnet];
+  for (auto dnet : dnets) {
+    auto net = owner2nets_[dnet];
     // init gc net
     initNet(net);
     getWorkerRegionQuery().addToRegionQuery(net);
