@@ -1492,6 +1492,7 @@ odb::dbITerm* TritonCTS::getSingleOutput(odb::dbInst* inst,
   }
   return output;
 }
+
 bool TritonCTS::masterExists(const std::string& master) const
 {
   return db_->findMaster(master.c_str());
@@ -1501,11 +1502,26 @@ void TritonCTS::findClockRoots(sta::Clock* clk,
                                std::set<odb::dbNet*>& clockNets)
 {
   for (const sta::Pin* pin : clk->leafPins()) {
-    odb::dbITerm* instTerm;
-    odb::dbBTerm* port;
-    network_->staToDb(pin, instTerm, port);
-    odb::dbNet* net = instTerm ? instTerm->getNet() : port->getNet();
-    clockNets.insert(net);
+    odb::dbITerm* iterm;
+    odb::dbBTerm* bterm;
+    odb::dbModITerm* moditerm;
+    odb::dbModBTerm* modbterm;
+    network_->staToDb(pin, iterm, bterm, moditerm, modbterm);
+    odb::dbNet* net;
+    if (iterm)
+      net = iterm->getNet();
+    if (bterm)
+      net = bterm -> getNet();
+    if (moditerm){
+      odb::dbModNet* mod_net = moditerm -> getNet();
+      net = network_ -> findDbNetForModNet(mod_net);
+    }
+    if (modbterm){
+      odb::dbModNet* mod_net = modbterm -> getNet();
+      net = network_ -> findDbNetForModNet(mod_net);
+    }
+    if (net)
+      clockNets.insert(net);
   }
 }
 

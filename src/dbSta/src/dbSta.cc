@@ -247,13 +247,43 @@ std::set<dbNet*> dbSta::findClkNets()
       for (const Pin* pin : *clk_pins) {
         Net* net = network_->net(pin);
         if (net) {
-          clk_nets.insert(db_network_->staToDb(net));
+	  dbNet* db_net;
+	  dbModNet* mod_net;
+	  db_network_ -> staToDb(net, db_net, mod_net);
+	  if (db_net)
+	    clk_nets.insert(db_net);
+	  else{
+	    db_net = db_network_ -> findDbNetForModNet(mod_net);
+	    if (db_net)
+	      clk_nets.insert(db_net);
+	  }
         }
       }
     }
   }
   return clk_nets;
 }
+
+std::set<Net*> dbSta::findClkNetsH()
+{
+  ensureClkNetwork();
+  std::set<Net*> clk_nets;
+  for (Clock* clk : sdc_->clks()) {
+    const PinSet* clk_pins = pins(clk);
+    if (clk_pins) {
+      for (const Pin* pin : *clk_pins) {
+        Net* net = network_->net(pin);
+        if (net) {
+	  clk_nets.insert(net);
+        }
+      }
+    }
+  }
+  return clk_nets;
+}
+
+
+
 
 std::set<dbNet*> dbSta::findClkNets(const Clock* clk)
 {
@@ -270,6 +300,7 @@ std::set<dbNet*> dbSta::findClkNets(const Clock* clk)
   }
   return clk_nets;
 }
+
 
 std::string dbSta::getInstanceTypeText(InstType type)
 {
@@ -457,6 +488,7 @@ void dbSta::report_cell_usage()
   }
   logger_->report("  Total: {}", total_usage);
 }
+
 
 ////////////////////////////////////////////////////////////////
 
