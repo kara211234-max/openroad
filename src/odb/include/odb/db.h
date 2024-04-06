@@ -3006,12 +3006,12 @@ class dbInst : public dbObject
   ///
   /// Get the user-defined flag bit.
   ///
-  bool getUserFlag3();
+  bool isPlacedAsFiller();
 
   ///
   /// Set the user-defined flag bit.
   ///
-  void setUserFlag3();
+  void setPlacedAsFiller();
 
   ///
   /// Clear the user-defined flag bit.
@@ -3236,6 +3236,11 @@ class dbInst : public dbObject
   /// Is the master's type ENDCAP or any of its subtypes
   ///
   bool isEndCap() const;
+
+  ///
+  /// If this instance was created as a physical_only inst
+  ///
+  bool isPhysicalOnly() const;
 
   void setPinAccessIdx(uint idx);
 
