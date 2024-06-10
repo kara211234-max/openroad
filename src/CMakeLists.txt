@@ -190,7 +190,6 @@ add_compile_options(
   -Wredundant-decls
   -Wformat-security
   -Wno-sign-compare
-  -Wp,-D_GLIBCXX_ASSERTIONS
   $<$<CXX_COMPILER_ID:Clang>:-Wno-gnu-zero-variadic-macro-arguments>
   # Needed for floating point stability in FFT (fft_test will check this).
   # See also https://kristerw.github.io/2021/11/09/fp-contract/
@@ -248,6 +247,14 @@ endif()
 find_package(Threads REQUIRED)
 set(THREADS_PREFER_PTHREAD_FLAG ON)
 
+find_package(Kokkos)
+
+if (NOT Kokkos_FOUND)
+  add_compile_options(
+    -Wp,-D_GLIBCXX_ASSERTIONS
+  )
+endif()
+
 ################################################################
 
 # Build flow tools
@@ -265,7 +272,9 @@ add_subdirectory(dbSta)
 add_subdirectory(rsz)
 add_subdirectory(stt)
 add_subdirectory(gpl)
-add_subdirectory(gpl2)
+if (Kokkos_FOUND)
+  add_subdirectory(gpl2)
+endif()
 add_subdirectory(dpl)
 add_subdirectory(dpo)
 add_subdirectory(fin)
@@ -293,6 +302,9 @@ add_subdirectory(par)
 add_executable(openroad
   ${OPENROAD_SOURCE}
 )
+if (Kokkos_FOUND)
+  target_compile_definitions(openroad PUBLIC ENABLE_KOKKOS)
+endif()
 
 target_compile_options(openroad
   PRIVATE
@@ -323,7 +335,6 @@ target_link_libraries(openroad
   pad
   openroad_swig
   gpl
-  gpl2
   dpl
   dpo
   fin
@@ -355,6 +366,10 @@ target_link_libraries(openroad
   ${TCL_LIBRARY}
   ${CMAKE_THREAD_LIBS_INIT}
 )
+
+if (Kokkos_FOUND)
+  target_link_libraries(openroad gpl2 Kokkos::kokkos)
+endif()
 
 target_compile_definitions(openroad PRIVATE BUILD_TYPE="${CMAKE_BUILD_TYPE}")
 
@@ -411,7 +426,6 @@ if (Python3_FOUND AND BUILD_PYTHON)
     ant_py
     grt_py
     gpl_py
-    gpl2_py
     dpl_py
     mpl_py
     ppl_py
@@ -428,6 +442,9 @@ if (Python3_FOUND AND BUILD_PYTHON)
     dft_py
     par_py
   )
+  if (Kokkos_FOUND)
+    target_link_libraries(openroad gpl2_py Kokkos::kokkos)
+  endif()
 
 else()
   message(STATUS "Python3 disabled")

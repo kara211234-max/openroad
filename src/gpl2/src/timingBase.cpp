@@ -3,6 +3,7 @@
 // BSD 3-Clause License
 //
 // Copyright (c) 2023, Google LLC
+// Copyright (c) 2024, Antmicro
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -33,35 +34,33 @@
 //
 ///////////////////////////////////////////////////////////////////////////////
 
-#pragma once
+#include <algorithm>
+#include <cmath>
+#include <utility>
 
-#include <memory>
-#include <vector>
-
-namespace rsz {
-class Resizer;
-}
-
-namespace utl {
-class Logger;
-}
+#include "timingBase.h"
+#include "placerBase.h"
+#include "rsz/Resizer.hh"
+#include "sta/Fuzzy.hh"
+#include "utl/Logger.h"
 
 namespace gpl2 {
 
-class PlacerBaseCommon;
+using utl::GPL;
 
-class GpuTimingBase
+// TimingBase
+TimingBase::TimingBase() : rs_(nullptr), log_(nullptr), nbc_(nullptr)
 {
- public:
-  GpuTimingBase();
-  GpuTimingBase(std::shared_ptr<PlacerBaseCommon> nbc,
-                rsz::Resizer* rs,
-                utl::Logger* log);
+}
 
- private:
-  rsz::Resizer* rs_;
-  utl::Logger* log_;
-  std::shared_ptr<PlacerBaseCommon> nbc_;
-};
+TimingBase::TimingBase(std::shared_ptr<PlacerBaseCommon> nbc,
+                             rsz::Resizer* rs,
+                             utl::Logger* log)
+    : TimingBase()
+{
+  rs_ = rs;
+  nbc_ = std::move(nbc);
+  log_ = log;
+}
 
 }  // namespace gpl2
