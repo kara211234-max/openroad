@@ -33,7 +33,9 @@
 
 #pragma once
 
+#include <list>
 #include <memory>
+#include <set>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -52,6 +54,34 @@ class Logger;
 }
 
 namespace gpl {
+struct GCellState
+{
+  FloatPoint curSLPCoordi;
+  FloatPoint curSLPWireLengthGrads;
+  FloatPoint curSLPDensityGrads;
+  FloatPoint curSLPSumGrads;
+
+  FloatPoint nextSLPCoordi;
+  FloatPoint nextSLPWireLengthGrads;
+  FloatPoint nextSLPDensityGrads;
+  FloatPoint nextSLPSumGrads;
+
+  FloatPoint prevSLPCoordi;
+  FloatPoint prevSLPWireLengthGrads;
+  FloatPoint prevSLPDensityGrads;
+  FloatPoint prevSLPSumGrads;
+
+  FloatPoint curCoordi;
+  FloatPoint nextCoordi;
+
+  FloatPoint initCoordi;
+
+  // Saving state for routability snapshot
+  FloatPoint snapshotCoordi;
+  FloatPoint snapshotSLPCoordi;
+  FloatPoint snapshotSLPSumGrads;
+  std::pair<int, int> minRcCellSize;
+};
 
 class Instance;
 class Die;
@@ -61,24 +91,113 @@ class PlacerBase;
 class Instance;
 class Pin;
 class Net;
-
-class GPin;
 class FFT;
+class GCell;
+class GNet;
+
+class GPin
+{
+ public:
+  GPin(Pin* pin, uint id);
+  GPin(const std::vector<Pin*>& pins);
+
+  Pin* pin() const;
+  const std::vector<Pin*>& pins() const { return pins_; }
+
+  GCell* gCell() const { return gCell_; }
+  GNet* gNet() const { return gNet_; }
+
+  void setGCell(GCell* gCell);
+  void setGNet(GNet* gNet);
+
+  int cx() const { return cx_; }
+  int cy() const { return cy_; }
+
+  // clear WA(Weighted Average) variables.
+  void clearWaVars();
+
+  void setMaxExpSumX(float maxExpSumX);
+  void setMaxExpSumY(float maxExpSumY);
+  void setMinExpSumX(float minExpSumX);
+  void setMinExpSumY(float minExpSumY);
+
+  float maxExpSumX() const { return maxExpSumX_; }
+  float maxExpSumY() const { return maxExpSumY_; }
+  float minExpSumX() const { return minExpSumX_; }
+  float minExpSumY() const { return minExpSumY_; }
+
+  bool hasMaxExpSumX() const { return hasMaxExpSumX_; }
+  bool hasMaxExpSumY() const { return hasMaxExpSumY_; }
+  bool hasMinExpSumX() const { return hasMinExpSumX_; }
+  bool hasMinExpSumY() const { return hasMinExpSumY_; }
+
+  void setCenterLocation(int cx, int cy);
+  void updateLocation(const GCell* gCell);
+  void updateDensityLocation(const GCell* gCell);
+
+  uint getId() const { return id; }
+
+ private:
+  uint id = 0;
+  GCell* gCell_ = nullptr;
+  GNet* gNet_ = nullptr;
+  std::vector<Pin*> pins_;
+
+  int offsetCx_ = 0;
+  int offsetCy_ = 0;
+  int cx_ = 0;
+  int cy_ = 0;
+
+  // weighted average WL vals stor for better indexing
+  // Please check the equation (4) in the ePlace-MS paper.
+  //
+  // maxExpSum_: holds exp(x_i/gamma)
+  // minExpSum_: holds exp(-x_i/gamma)
+  // the x_i is equal to cx_ variable.
+  //
+  float maxExpSumX_ = 0;
+  float maxExpSumY_ = 0;
+
+  float minExpSumX_ = 0;
+  float minExpSumY_ = 0;
+
+  // flag variables
+  //
+  // check whether
+  // this pin is considered in a WA models.
+  bool hasMaxExpSumX_ = false;
+  bool hasMaxExpSumY_ = false;
+
+  bool hasMinExpSumX_ = false;
+  bool hasMinExpSumY_ = false;
+};
+
+struct GPinComparator
+{
+  bool operator()(const std::unique_ptr<GPin>& lhs,
+                  const std::unique_ptr<GPin>& rhs) const
+  {
+    return lhs->getId() < rhs->getId();
+  }
+
+  bool operator()(const GPin* lhs, const GPin* rhs) const
+  {
+    return lhs->getId() < rhs->getId();
+  }
+};
 
 class GCell
 {
  public:
   // instance cells
-  GCell(Instance* inst);
-  GCell(const std::vector<Instance*>& insts);
+  GCell(Instance* inst, uint id);
 
   // filler cells
-  GCell(int cx, int cy, int dx, int dy);
+  GCell(int cx, int cy, int dx, int dy, uint id);
 
   Instance* instance() const;
   const std::vector<Instance*>& insts() const { return insts_; }
   const std::vector<GPin*>& gPins() const { return gPins_; }
-
   void addGPin(GPin* gPin);
 
   void setClusteredInstance(const std::vector<Instance*>& insts);
@@ -127,7 +246,11 @@ class GCell
   bool isMacroInstance() const;
   bool isStdInstance() const;
 
+  uint getId() const { return id; }
+  GCellState state;
+
  private:
+  uint id = 0;
   std::vector<Instance*> insts_;
   std::vector<GPin*> gPins_;
   int lx_ = 0;
@@ -227,12 +350,12 @@ inline int GCell::dDy() const
 class GNet
 {
  public:
-  GNet(Net* net);
+  GNet(Net* net, uint id);
   GNet(const std::vector<Net*>& nets);
 
   Net* net() const;
   const std::vector<Net*>& nets() const { return nets_; }
-  const std::vector<GPin*>& gPins() const { return gPins_; }
+  const std::set<GPin*, GPinComparator>& gPins() const { return gPins_; }
 
   int lx() const;
   int ly() const;
@@ -280,8 +403,11 @@ class GNet
   float waExpMaxSumY() const;
   float waYExpMaxSumY() const;
 
+  uint getId() const { return id; }
+
  private:
-  std::vector<GPin*> gPins_;
+  uint id = 0;
+  std::set<GPin*, GPinComparator> gPins_;
   std::vector<Net*> nets_;
   int lx_ = 0;
   int ly_ = 0;
@@ -432,78 +558,27 @@ inline float GNet::waYExpMaxSumY() const
   return waYExpMaxSumY_;
 }
 
-class GPin
+struct GCellComparator
 {
- public:
-  GPin(Pin* pin);
-  GPin(const std::vector<Pin*>& pins);
+  bool operator()(const std::unique_ptr<GCell>& lhs,
+                  const std::unique_ptr<GCell>& rhs) const
+  {
+    return lhs->getId() < rhs->getId();
+  }
 
-  Pin* pin() const;
-  const std::vector<Pin*>& pins() const { return pins_; }
+  bool operator()(const GCell* lhs, const GCell* rhs) const
+  {
+    return lhs->getId() < rhs->getId();
+  }
+};
 
-  GCell* gCell() const { return gCell_; }
-  GNet* gNet() const { return gNet_; }
-
-  void setGCell(GCell* gCell);
-  void setGNet(GNet* gNet);
-
-  int cx() const { return cx_; }
-  int cy() const { return cy_; }
-
-  // clear WA(Weighted Average) variables.
-  void clearWaVars();
-
-  void setMaxExpSumX(float maxExpSumX);
-  void setMaxExpSumY(float maxExpSumY);
-  void setMinExpSumX(float minExpSumX);
-  void setMinExpSumY(float minExpSumY);
-
-  float maxExpSumX() const { return maxExpSumX_; }
-  float maxExpSumY() const { return maxExpSumY_; }
-  float minExpSumX() const { return minExpSumX_; }
-  float minExpSumY() const { return minExpSumY_; }
-
-  bool hasMaxExpSumX() const { return hasMaxExpSumX_; }
-  bool hasMaxExpSumY() const { return hasMaxExpSumY_; }
-  bool hasMinExpSumX() const { return hasMinExpSumX_; }
-  bool hasMinExpSumY() const { return hasMinExpSumY_; }
-
-  void setCenterLocation(int cx, int cy);
-  void updateLocation(const GCell* gCell);
-  void updateDensityLocation(const GCell* gCell);
-
- private:
-  GCell* gCell_ = nullptr;
-  GNet* gNet_ = nullptr;
-  std::vector<Pin*> pins_;
-
-  int offsetCx_ = 0;
-  int offsetCy_ = 0;
-  int cx_ = 0;
-  int cy_ = 0;
-
-  // weighted average WL vals stor for better indexing
-  // Please check the equation (4) in the ePlace-MS paper.
-  //
-  // maxExpSum_: holds exp(x_i/gamma)
-  // minExpSum_: holds exp(-x_i/gamma)
-  // the x_i is equal to cx_ variable.
-  //
-  float maxExpSumX_ = 0;
-  float maxExpSumY_ = 0;
-
-  float minExpSumX_ = 0;
-  float minExpSumY_ = 0;
-
-  // flag variables
-  //
-  // check whether
-  // this pin is considered in a WA models.
-  bool hasMaxExpSumX_ = false;
-  bool hasMaxExpSumY_ = false;
-
-  bool hasMinExpSumX_ = false;
-  bool hasMinExpSumY_ = false;
+struct GNetComparator
+{
+  bool operator()(const std::unique_ptr<GNet>& lhs,
+                  const std::unique_ptr<GNet>& rhs) const
+  {
+    return lhs->getId() < rhs->getId();
+  }
 };
 
 class Bin
@@ -670,7 +745,8 @@ class BinGrid
   void setCorePoints(const Die* die);
   void setBinCnt(int binCntX, int binCntY);
   void setTargetDensity(float density);
-  void updateBinsGCellDensityArea(const std::vector<GCell*>& cells);
+  void updateBinsGCellDensityArea(
+      const std::set<GCell*, GCellComparator>& cells);
   void setNumThreads(int num_threads) { num_threads_ = num_threads; }
 
   void initBins();
@@ -781,10 +857,18 @@ class NesterovBaseCommon
                      std::shared_ptr<PlacerBaseCommon> pb,
                      utl::Logger* log,
                      int num_threads);
-
-  const std::vector<GCell*>& gCells() const { return gCells_; }
-  const std::vector<GNet*>& gNets() const { return gNets_; }
-  const std::vector<GPin*>& gPins() const { return gPins_; }
+  std::set<std::unique_ptr<GCell>, GCellComparator>& gCells()
+  {
+    return gCells_;
+  }
+  const std::set<std::unique_ptr<GNet>, GNetComparator>& gNets() const
+  {
+    return gNets_;
+  }
+  const std::set<std::unique_ptr<GPin>, GPinComparator>& gPins() const
+  {
+    return gPins_;
+  }
 
   //
   // placerBase To NesterovBase functions
@@ -829,24 +913,27 @@ class NesterovBaseCommon
   // Number of threads of execution
   size_t getNumThreads() { return num_threads_; }
 
+  void createGCell(odb::dbInst* db_inst);
+
+  uint addValidGCellID();
+
  private:
   NesterovBaseVars nbVars_;
   std::shared_ptr<PlacerBaseCommon> pbc_;
   utl::Logger* log_ = nullptr;
 
-  std::vector<GCell> gCellStor_;
-  std::vector<GNet> gNetStor_;
-  std::vector<GPin> gPinStor_;
-
-  std::vector<GCell*> gCells_;
-  std::vector<GNet*> gNets_;
-  std::vector<GPin*> gPins_;
+  std::set<std::unique_ptr<GCell>, GCellComparator> gCells_;
+  std::set<std::unique_ptr<GPin>, GPinComparator> gPins_;
+  std::set<std::unique_ptr<GNet>, GNetComparator> gNets_;
 
   std::unordered_map<Instance*, GCell*> gCellMap_;
   std::unordered_map<Pin*, GPin*> gPinMap_;
   std::unordered_map<Net*, GNet*> gNetMap_;
 
   int num_threads_;
+  uint valid_gcell_id = 0;
+  uint valid_gpin_id = 0;
+  uint valid_gnet_id = 0;
 };
 
 // Stores instances belonging to a specific power domain
@@ -862,9 +949,7 @@ class NesterovBase
                utl::Logger* log);
   ~NesterovBase();
 
-  const std::vector<GCell*>& gCells() const { return gCells_; }
-  const std::vector<GCell*>& gCellInsts() const { return gCellInsts_; }
-  const std::vector<GCell*>& gCellFillers() const { return gCellFillers_; }
+  const std::set<GCell*, GCellComparator>& gCells() const { return gCells_; }
 
   float getSumOverflow() const { return sumOverflow_; }
   float getSumOverflowUnscaled() const { return sumOverflowUnscaled_; }
@@ -874,10 +959,7 @@ class NesterovBase
   float getWireLengthGradSum() const { return wireLengthGradSum_; }
   float getDensityGradSum() const { return densityGradSum_; }
 
-  // update gCells with cx, cy
-  void updateGCellCenterLocation(const std::vector<FloatPoint>& coordis);
-
-  void updateGCellDensityCenterLocation(const std::vector<FloatPoint>& coordis);
+  void updateGCellDensityCenterLocation(FloatPoint GCellState::*coordPtr);
 
   int binCntX() const;
   int binCntY() const;
@@ -930,16 +1012,10 @@ class NesterovBase
 
   void setTargetDensity(float targetDensity);
 
-  // RD can shrink the number of fillerCells.
-  void cutFillerCells(int64_t targetFillerArea);
-
   void updateDensityCoordiLayoutInside(GCell* gcell);
 
   float getDensityCoordiLayoutInsideX(const GCell* gCell, float cx) const;
   float getDensityCoordiLayoutInsideY(const GCell* gCell, float cy) const;
-
-  // FloatPoint getRegionGradient(const GCell* gCell, FloatPoint nextLocation)
-  // const;
 
   // for preconditioner
   FloatPoint getDensityPreconditioner(const GCell* gCell) const;
@@ -961,18 +1037,15 @@ class NesterovBase
     isMaxPhiCoefChanged_ = maxPhiCoefChanged;
   }
 
-  void updateGradients(std::vector<FloatPoint>& sumGrads,
-                       std::vector<FloatPoint>& wireLengthGrads,
-                       std::vector<FloatPoint>& densityGrads,
+  void updateGradients(FloatPoint GCellState::*sumGradsPtr,
+                       FloatPoint GCellState::*wireLengthGradsPtr,
+                       FloatPoint GCellState::*densityGradsPtr,
                        float wlCoeffX,
                        float wlCoeffY);
 
   void updateInitialPrevSLPCoordi();
 
-  float getStepLength(const std::vector<FloatPoint>& prevSLPCoordi_,
-                      const std::vector<FloatPoint>& prevSLPSumGrads_,
-                      const std::vector<FloatPoint>& curSLPCoordi_,
-                      const std::vector<FloatPoint>& curSLPSumGrads_);
+  float getStepLength();
 
   void updateNextIter(int iter);
   float getPhiCoef(float scaledDiffHpwl) const;
@@ -1003,6 +1076,8 @@ class NesterovBase
 
   bool isDiverged() const { return isDiverged_; }
 
+  void createGCell(odb::dbInst* db_inst);
+
  private:
   NesterovBaseVars nbVars_;
   std::shared_ptr<PlacerBase> pb_;
@@ -1021,46 +1096,13 @@ class NesterovBase
   int64_t stdInstsArea_ = 0;
   int64_t macroInstsArea_ = 0;
 
-  std::vector<GCell> gCellStor_;
-
-  std::vector<GCell*> gCells_;
-  std::vector<GCell*> gCellInsts_;
-  std::vector<GCell*> gCellFillers_;
+  std::set<GCell*, GCellComparator> gCells_;
+  std::set<std::unique_ptr<GCell>> fillerGCells_;
+  int fillersCount = 0;
 
   float sumPhi_ = 0;
   float targetDensity_ = 0;
   float uniformTargetDensity_ = 0;
-
-  // Nesterov loop data for each region
-  // SLP is Step Length Prediction.
-  //
-  // y_st, y_dst, y_wdst, w_pdst
-  std::vector<FloatPoint> curSLPCoordi_;
-  std::vector<FloatPoint> curSLPWireLengthGrads_;
-  std::vector<FloatPoint> curSLPDensityGrads_;
-  std::vector<FloatPoint> curSLPSumGrads_;
-
-  // y0_st, y0_dst, y0_wdst, y0_pdst
-  std::vector<FloatPoint> nextSLPCoordi_;
-  std::vector<FloatPoint> nextSLPWireLengthGrads_;
-  std::vector<FloatPoint> nextSLPDensityGrads_;
-  std::vector<FloatPoint> nextSLPSumGrads_;
-
-  // z_st, z_dst, z_wdst, z_pdst
-  std::vector<FloatPoint> prevSLPCoordi_;
-  std::vector<FloatPoint> prevSLPWireLengthGrads_;
-  std::vector<FloatPoint> prevSLPDensityGrads_;
-  std::vector<FloatPoint> prevSLPSumGrads_;
-
-  // x_st and x0_st
-  std::vector<FloatPoint> curCoordi_;
-  std::vector<FloatPoint> nextCoordi_;
-
-  // save initial coordinates -- needed for RD
-  std::vector<FloatPoint> initCoordi_;
-
-  // densityPenalty stor
-  std::vector<float> densityPenaltyStor_;
 
   float wireLengthGradSum_ = 0;
   float densityGradSum_ = 0;
@@ -1096,9 +1138,6 @@ class NesterovBase
   bool isConverged_ = false;
 
   // Snapshot data
-  std::vector<FloatPoint> snapshotCoordi_;
-  std::vector<FloatPoint> snapshotSLPCoordi_;
-  std::vector<FloatPoint> snapshotSLPSumGrads_;
   float snapshotDensityPenalty_ = 0;
   float snapshotStepLength_ = 0;
 

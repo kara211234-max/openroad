@@ -294,9 +294,6 @@ void RouteBase::reset()
   minRcTargetDensity_ = 0;
   minRcViolatedCnt_ = 0;
 
-  minRcCellSize_.clear();
-  minRcCellSize_.shrink_to_fit();
-
   resetRoutabilityResources();
 }
 
@@ -317,7 +314,6 @@ void RouteBase::init()
   tg_ = std::move(tg);
 
   tg_->setLogger(log_);
-  minRcCellSize_.resize(nbc_->gCells().size(), std::make_pair(0, 0));
 }
 
 void RouteBase::getRudyResult()
@@ -601,13 +597,14 @@ std::pair<bool, bool> RouteBase::routability()
 
     // save cell size info
     for (auto& gCell : nbc_->gCells()) {
+      GCellState& state = gCell->state;
       if (!gCell->isStdInstance()) {
         continue;
       }
 
-      minRcCellSize_[&gCell - nbc_->gCells().data()]
-          = std::make_pair(gCell->dx(), gCell->dy());
+      state.minRcCellSize = std::make_pair(gCell->dx(), gCell->dy());
     }
+
   } else {
     minRcViolatedCnt_++;
     log_->info(GPL,
@@ -814,13 +811,13 @@ void RouteBase::revertGCellSizeToMinRc()
 {
   // revert back the gcell sizes
   for (auto& gCell : nbc_->gCells()) {
+    GCellState& state = gCell->state;
+
     if (!gCell->isStdInstance()) {
       continue;
     }
 
-    int idx = &gCell - nbc_->gCells().data();
-
-    gCell->setSize(minRcCellSize_[idx].first, minRcCellSize_[idx].second);
+    gCell->setSize(state.minRcCellSize.first, state.minRcCellSize.second);
   }
 }
 

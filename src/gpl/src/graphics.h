@@ -43,7 +43,8 @@ class Logger;
 }
 
 namespace gpl {
-
+struct GCellState;
+struct GCellComparator;
 class InitialPlace;
 class NesterovBaseCommon;
 class NesterovBase;
@@ -122,7 +123,11 @@ class Graphics : public gui::Renderer, public gui::HeatMapDataSource
   };
 
   void drawForce(gui::Painter& painter);
-  void drawCells(const std::vector<GCell*>& cells, gui::Painter& painter);
+  void drawCell(GCell* gCell, gui::Painter& painter);
+  void drawCells(const std::set<std::unique_ptr<GCell>, GCellComparator>& cells,
+                 gui::Painter& painter);
+  void drawCells(const std::set<GCell*, GCellComparator>& cells,
+                 gui::Painter& painter);
 
   std::shared_ptr<PlacerBaseCommon> pbc_;
   std::shared_ptr<NesterovBaseCommon> nbc_;
