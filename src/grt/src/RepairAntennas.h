@@ -80,6 +80,13 @@ struct RoutePtPins
 };
 
 using RoutePtPinsMap = std::map<RoutePt, RoutePtPins>;
+using SegmentIdByViolation = std::unordered_map<int, std::vector<int>>;
+
+struct ViolationInfo
+{
+  int pin_num_near_to_start_ = 0;
+  int pin_num_near_to_end_ = 0;
+};
 
 enum class RoutingSource
 {
@@ -107,6 +114,42 @@ class RepairAntennas
                           odb::dbMTerm* diode_mterm,
                           float ratio_margin);
   void repairAntennas(odb::dbMTerm* diode_mterm);
+  int addJumpers(std::vector<int>& segment_ids,
+                 GRoute& route,
+                 odb::dbTechLayer* violation_layer,
+                 const int& tile_size,
+                 const double& ratio,
+                 const ViolationInfo& info);
+  bool verifyCapacityForJumper(bool is_horizontal,
+                               const int& tile_size,
+                               const int& init_x,
+                               const int& init_y,
+                               const int& final_x,
+                               const int& final_y,
+                               const int& layer_level);
+  int getSegmentIdToAdd(std::vector<int>& segments,
+                        const GRoute& route,
+                        int& req_size,
+                        const int& bridge_size,
+                        const int& tile_size,
+                        bool is_horizontal,
+                        bool in_start);
+  SegmentIdByViolation getSegmentsWithViolation(
+      odb::dbNet* db_net,
+      const GRoute& route,
+      const int& max_layer,
+      std::map<int, int>& layer_with_violation);
+  void getPinNumberNearEndPoint(const std::vector<int>& segment_ids,
+                                const std::vector<odb::dbITerm*>& gates,
+                                const GRoute& route,
+                                ViolationInfo& info);
+  void jumperInsertion(NetRouteMap& routing,
+                       const int tile_size,
+                       const int& max_routing_layer);
+  int illegalDiodePlacementCount() const
+  {
+    return illegal_diode_placement_count_;
+  }
   void legalizePlacedCells();
   AntennaViolations getAntennaViolations() { return antenna_violations_; }
   void setAntennaViolations(AntennaViolations antenna_violations)
@@ -202,6 +245,7 @@ class RepairAntennas
   AntennaViolations antenna_violations_;
   int unique_diode_index_;
   int illegal_diode_placement_count_;
+  std::unordered_map<int, std::set<std::pair<int, int>>> vias_pos_;
   RoutingSource routing_source_;
 };
 
